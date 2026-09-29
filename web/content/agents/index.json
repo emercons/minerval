@@ -8,8 +8,8 @@
     "invokedWhen": "A URL or document is submitted for ingestion.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 8686,
-    "fullChars": 59601,
+    "roleChars": 8852,
+    "fullChars": 59767,
     "skills": [
       {
         "name": "mathematics",
@@ -34,8 +34,8 @@
     "invokedWhen": "For every new claim and subclaim — at ingestion, and as a tool the Steward and Curator call before creating anything.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 11507,
-    "fullChars": 62422,
+    "roleChars": 11876,
+    "fullChars": 62791,
     "skills": [
       {
         "name": "mathematics",
@@ -54,8 +54,8 @@
     "invokedWhen": "A contributor submits a challenge, support, merge, edit, instance, or argument.",
     "model": "Claude Sonnet 5",
     "hasConstitution": true,
-    "roleChars": 20251,
-    "fullChars": 71166,
+    "roleChars": 20620,
+    "fullChars": 71535,
     "skills": [
       {
         "name": "mathematics",
@@ -81,8 +81,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 39079,
-    "fullChars": 89994,
+    "roleChars": 39448,
+    "fullChars": 90363,
     "skills": [
       {
         "name": "mathematics",
@@ -118,8 +118,8 @@
     "invokedWhen": "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 15344,
-    "fullChars": 66259,
+    "roleChars": 15713,
+    "fullChars": 66628,
     "skills": [
       {
         "name": "mathematics",
@@ -147,8 +147,8 @@
     "invokedWhen": "A review is escalated, an appeal is filed, or a claim is persistently contested.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 17850,
-    "fullChars": 68765,
+    "roleChars": 18219,
+    "fullChars": 69134,
     "skills": [
       {
         "name": "mathematics",
@@ -174,8 +174,8 @@
     "invokedWhen": "Random 5% sampling, high-reputation decisions, complaints, or anomalies.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19206,
-    "fullChars": 70121,
+    "roleChars": 19575,
+    "fullChars": 70490,
     "skills": [
       {
         "name": "mathematics",
@@ -213,8 +213,8 @@
     "invokedWhen": "A funder starts a granting conversation, and autonomously on each active mandate's periodic review pass.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 19314,
-    "fullChars": 70229,
+    "roleChars": 19683,
+    "fullChars": 70598,
     "skills": [
       {
         "name": "mathematics",
@@ -240,8 +240,8 @@
     "invokedWhen": "A mandate's Grantmaker posts one with a brief; the ledger then funds a run from the mandate's escrow whenever the lookout is due (its heartbeat) or an input has been queued for it.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 10467,
-    "fullChars": 61382,
+    "roleChars": 10836,
+    "fullChars": 61751,
     "skills": [
       {
         "name": "mathematics",
@@ -266,8 +266,8 @@
     "invokedWhen": "The General mandate funds a sweep (a consistency_sweep ledger action, capped per day) over the region of the graph most re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     "model": "GLM 5.3 Flash",
     "hasConstitution": true,
-    "roleChars": 9957,
-    "fullChars": 60872,
+    "roleChars": 10160,
+    "fullChars": 61075,
     "skills": []
   },
   {
