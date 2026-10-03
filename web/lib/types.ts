@@ -975,6 +975,10 @@ export type StoryBasis = "steward" | "primary_source_kind" | "upstream" | "none"
 export interface StoryNode {
   source: { id: string; title: string; url: string | null; source_type: string };
   instance_ids: string[];
+  /** When the source said it, partial ISO-8601; absent from an API that predates it. */
+  date?: string | null;
+  /** Which side its instances take (affirms, denies, poses); empty for an underlying source. */
+  stances?: string[];
   /** Drawn on by the claim's sources without stating the claim itself. */
   underlying: boolean;
   standing: StoryStanding;
@@ -1096,4 +1100,52 @@ export interface SourcePage {
   facts: SourceFacts;
   document: SourceDocument | null;
   examinations: Examination[];
+  /** Lineage, prominence, and history; absent until the API serves it. */
+  context?: SourceContext | null;
+}
+
+// GET /sources/:id/context (#507): the document across the whole graph.
+// Figures are given as they are, inputs to a reader's judgment; nothing here
+// is a verdict on the source.
+
+export interface LineageEntry {
+  source: { id: string; title: string; url: string | null; source_type: string; published_date: string | null };
+  relations: Array<{ relation_type: ProvenanceEdge["relation_type"]; fidelity: ProvenanceEdge["fidelity"]; claims: number }>;
+  claims: number;
+  diverges: boolean;
+}
+
+export interface LineageSide {
+  total: number;
+  entries: LineageEntry[];
+  /** The tail beyond the cards, by kind, with edge counts by fidelity. */
+  rest: Array<{ source_type: string; sources: number; fidelity: Record<string, number> }>;
+}
+
+export interface SourceContext {
+  lineage: { draws_on: LineageSide; drawn_on_by: LineageSide };
+  prominence: {
+    reach: { copies: number; direct_copies: number };
+    structure: {
+      claims: number;
+      origin_on: number;
+      origin_by_steward: number;
+      underlying_on: number;
+      downstream: number;
+      claims_read: number;
+    };
+    evidence: {
+      readings_by_support: Partial<Record<InstanceReading["support"], number>>;
+      read_whole: number;
+      claims_citing_findings: number;
+      notes: Array<{ claim: { id: string; text: string }; support: InstanceReading["support"]; note: string; read_at: string }>;
+    };
+  };
+  history: Array<{
+    at: string;
+    kind: "retrieved" | "facts" | "segmented" | "event" | "reading" | "examination" | "finding" | "audit_note" | "citation" | "watch";
+    by: string;
+    text: string;
+    claim: { id: string; text: string } | null;
+  }>;
 }
