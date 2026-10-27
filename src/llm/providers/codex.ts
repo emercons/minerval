@@ -11,7 +11,8 @@
  * Every request spawns
  *
  *   codex exec -m <model> -c model_reasoning_effort=<effort> -s read-only
- *     --skip-git-repo-check --json --output-schema <schema> -o <reply> -
+ *     --skip-git-repo-check --ignore-user-config --json
+ *     --output-schema <schema> -o <reply> -
  *
  * with the whole prompt on STDIN (never on the command line), cwd set to a
  * fresh empty temp directory that is deleted afterwards, and the reply read
@@ -209,6 +210,63 @@ export function planSpawn(bin: string, args: string[]): SpawnPlan {
   };
 }
 
+/**
+ * Environment variables the Codex child may see. Everything else is dropped:
+ * the server's own environment holds provider keys and database URLs (with
+ * passwords), and a prompt-injected source must not be able to make Codex
+ * print them, nor may an inherited OPENAI_API_KEY switch Codex from the
+ * subscription to metered API billing.
+ */
+const CODEX_ENV_ALLOW = new Set([
+  "PATH",
+  "PATHEXT",
+  "SYSTEMROOT",
+  "SYSTEMDRIVE",
+  "COMSPEC",
+  "WINDIR",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "USER",
+  "USERNAME",
+  "LOGNAME",
+  "LANG",
+  "LANGUAGE",
+  // Network plumbing codex needs to reach its backend behind a proxy / custom CA.
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "NODE_EXTRA_CA_CERTS",
+]);
+/** Never passed, even when a name would otherwise be allowed (e.g. CODEX_API_KEY). */
+const CODEX_ENV_DENY = /(API_KEY|TOKEN|SECRET|PASSWORD|DATABASE_URL)/i;
+
+/**
+ * The allowlisted child environment: the names above, LC_*, and Codex's own
+ * CODEX_* namespace (CODEX_HOME etc.), minus anything that looks like a
+ * credential.
+ */
+export function codexChildEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(env)) {
+    if (value === undefined) continue;
+    const upper = name.toUpperCase();
+    const allowed =
+      CODEX_ENV_ALLOW.has(upper) || upper.startsWith("LC_") || upper.startsWith("CODEX_");
+    if (allowed && !CODEX_ENV_DENY.test(upper)) out[name] = value;
+  }
+  return out;
+}
+
 function killTree(pid: number | undefined): void {
   if (!pid) return;
   try {
@@ -313,6 +371,10 @@ async function runCodex(
       "-s",
       "read-only",
       "--skip-git-repo-check",
+      // MCP servers and plugins come from the user's config.toml; none may be
+      // reachable from here. (`-c mcp_servers={}` does NOT do this: -c merges,
+      // so the user's servers survive it.) Login still comes from CODEX_HOME.
+      "--ignore-user-config",
       "--json",
       "--output-schema",
       schemaFile,
@@ -330,6 +392,7 @@ async function runCodex(
     }>((resolve, reject) => {
       const child = spawn(plan.command, plan.args, {
         cwd: work,
+        env: codexChildEnv(),
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
         windowsVerbatimArguments: plan.windowsVerbatimArguments,
@@ -466,23 +529,59 @@ export function toCodexStrictSchema(schema: unknown): unknown {
   return toStrictJsonSchema(node);
 }
 
+/** Resolve a local "#/$defs/x" or "#/definitions/x" reference against `root`. */
+function resolveLocalRef(node: Record<string, unknown>, root: unknown): Record<string, unknown> {
+  const seen = new Set<string>();
+  let current = node;
+  while (typeof current.$ref === "string" && !seen.has(current.$ref)) {
+    const ref = current.$ref;
+    seen.add(ref);
+    if (!ref.startsWith("#/")) return current;
+    let target: unknown = root;
+    for (const part of ref.slice(2).split("/")) {
+      const key = part.replace(/~1/g, "/").replace(/~0/g, "~");
+      target = target && typeof target === "object" ? (target as Record<string, unknown>)[key] : undefined;
+    }
+    if (!target || typeof target !== "object") return current;
+    current = target as Record<string, unknown>;
+  }
+  return current;
+}
+
 /**
  * Undo the nullable-for-optional transform on a reply: drop `null` values for
  * properties the ORIGINAL schema did not require, so callers see them absent.
+ * Follows `items`, local `$ref`s, and anyOf/oneOf/allOf (for an object value,
+ * the first branch whose properties cover all of the value's keys).
  */
-export function stripOptionalNulls(value: unknown, schema: unknown): unknown {
+export function stripOptionalNulls(value: unknown, schema: unknown, root: unknown = schema): unknown {
   if (schema === null || typeof schema !== "object") return value;
-  const s = schema as Record<string, unknown>;
+  const s = resolveLocalRef(schema as Record<string, unknown>, root);
   if (Array.isArray(value)) {
-    return s.items !== undefined ? value.map((v) => stripOptionalNulls(v, s.items)) : value;
+    return s.items !== undefined ? value.map((v) => stripOptionalNulls(v, s.items, root)) : value;
   }
-  if (value === null || typeof value !== "object" || !s.properties) return value;
+  if (value === null || typeof value !== "object") return value;
+  if (!s.properties) {
+    const branches = [
+      ...((s.anyOf as unknown[]) ?? []),
+      ...((s.oneOf as unknown[]) ?? []),
+      ...((s.allOf as unknown[]) ?? []),
+    ];
+    const keys = Object.keys(value as Record<string, unknown>);
+    for (const b of branches) {
+      if (!b || typeof b !== "object") continue;
+      const branch = resolveLocalRef(b as Record<string, unknown>, root);
+      const props = branch.properties as Record<string, unknown> | undefined;
+      if (props && keys.every((k) => k in props)) return stripOptionalNulls(value, branch, root);
+    }
+    return value;
+  }
   const props = s.properties as Record<string, unknown>;
   const required = new Set(Array.isArray(s.required) ? (s.required as string[]) : []);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
     if (v === null && !required.has(k) && k in props) continue;
-    out[k] = k in props ? stripOptionalNulls(v, props[k]) : v;
+    out[k] = k in props ? stripOptionalNulls(v, props[k], root) : v;
   }
   return out;
 }

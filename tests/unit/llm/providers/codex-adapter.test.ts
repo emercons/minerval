@@ -43,7 +43,13 @@ function scenario(s: Record<string, unknown>): void {
   writeFileSync(join(dir, "scenario.json"), JSON.stringify(s));
 }
 
-function call(n = 0): { argv: string[]; stdin: string; cwd: string; cwdEntries: string[] } {
+function call(n = 0): {
+  argv: string[];
+  stdin: string;
+  cwd: string;
+  cwdEntries: string[];
+  env: Record<string, string>;
+} {
   return JSON.parse(readFileSync(join(dir, `call-${n}.json`), "utf8"));
 }
 
@@ -55,7 +61,7 @@ function callCount(): number {
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "fake-codex-test-"));
   process.env.CODEX_BIN = FAKE;
-  process.env.FAKE_CODEX_DIR = dir;
+  process.env.CODEX_FAKE_DIR = dir;
   delete process.env.CODEX_REASONING_EFFORT;
   delete process.env.CODEX_TIMEOUT_MS;
   meterLlmUsage.mockReset();
@@ -146,6 +152,47 @@ describe("codexAdapter — the process contract", () => {
       expect(call().stdin).toContain('stdin with "quotes" & ampersands');
     }
   );
+
+  it("hands codex an allowlisted environment: no keys, tokens, secrets or DB URLs", async () => {
+    scenario({ replies: [JSON.stringify({ text: "x" })] });
+    Object.assign(process.env, {
+      ANTHROPIC_API_KEY: "sk-ant-leak",
+      OPENAI_API_KEY: "sk-openai-leak",
+      OPENROUTER_API_KEY: "sk-or-leak",
+      CODEX_API_KEY: "sk-codex-leak",
+      DATABASE_URL: "postgresql://u:pw@db/x",
+      CORPUS_DATABASE_URL: "postgresql://u:pw@db/corpus",
+      GITHUB_TOKEN: "ghp_leak",
+      STRIPE_SECRET: "leak",
+      DB_PASSWORD: "leak",
+      SOME_RANDOM_SETTING: "not needed",
+      CODEX_HOME: join(dir, "codex-home"),
+      LC_ALL: "C",
+    });
+    await codexAdapter.complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] });
+    const env = call().env;
+    const names = Object.keys(env).map((k) => k.toUpperCase());
+    for (const leaked of [
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "OPENROUTER_API_KEY",
+      "CODEX_API_KEY",
+      "DATABASE_URL",
+      "CORPUS_DATABASE_URL",
+      "GITHUB_TOKEN",
+      "STRIPE_SECRET",
+      "DB_PASSWORD",
+      "SOME_RANDOM_SETTING",
+    ]) {
+      expect(names).not.toContain(leaked);
+    }
+    expect(JSON.stringify(env)).not.toMatch(/leak|pw@db/);
+    expect(names).toContain("PATH");
+    expect(env.CODEX_HOME).toBe(join(dir, "codex-home"));
+    expect(env.LC_ALL).toBe("C");
+    // User config (MCP servers, plugins, notify hooks) is not loaded.
+    expect(call().argv).toContain("--ignore-user-config");
+  });
 
   it("defaults reasoning effort to medium", async () => {
     scenario({ replies: [JSON.stringify({ text: "x" })] });
@@ -268,6 +315,32 @@ describe("toCodexStrictSchema", () => {
       additionalProperties: false,
     };
     expect(toCodexStrictSchema(s)).toEqual(s);
+  });
+
+  it("stripOptionalNulls follows local $refs and anyOf branches", () => {
+    const schema = {
+      $defs: {
+        Item: {
+          type: "object",
+          properties: { a: { type: "string" }, b: { type: "string" } },
+          required: ["a"],
+        },
+      },
+      type: "object",
+      properties: {
+        items: { type: "array", items: { $ref: "#/$defs/Item" } },
+        either: {
+          anyOf: [
+            { type: "string" },
+            { type: "object", properties: { x: { type: "string" }, y: { type: "string" } }, required: ["x"] },
+          ],
+        },
+      },
+      required: ["items", "either"],
+    };
+    expect(
+      stripOptionalNulls({ items: [{ a: "1", b: null }], either: { x: "x", y: null } }, schema)
+    ).toEqual({ items: [{ a: "1" }], either: { x: "x" } });
   });
 
   it("stripOptionalNulls keeps required nulls and recurses into arrays", () => {
