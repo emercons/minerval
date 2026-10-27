@@ -70,6 +70,14 @@ const MODEL_RATES: Record<string, ModelRates> = {
   "gpt-5": { inputPerMtok: 1.25, outputPerMtok: 10, ...OPENAI_FREE_CACHE_WRITES },
   "gpt-5-mini": { inputPerMtok: 0.25, outputPerMtok: 2, ...OPENAI_FREE_CACHE_WRITES },
   "gpt-5-nano": { inputPerMtok: 0.05, outputPerMtok: 0.4, ...OPENAI_FREE_CACHE_WRITES },
+
+  // --- Codex CLI (src/llm/providers/codex.ts) -------------------------------
+  // "codex:<model>" runs on the operator's flat-rate ChatGPT/Codex
+  // subscription: there is no per-token bill, so it meters at zero. Explicit
+  // on purpose — without this entry every codex call would meter at the
+  // top-tier FALLBACK_RATES and drain escrows/owl balances for money that is
+  // never spent.
+  "codex:": { inputPerMtok: 0, outputPerMtok: 0 },
 };
 
 // Conservative default for unknown models: price at the top (Fable) tier so a

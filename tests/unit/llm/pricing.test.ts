@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   costMicroUsd,
+  hasExplicitRates,
   ratesForModel,
   formatMicroUsd,
 } from "../../../src/llm/pricing.js";
@@ -15,6 +16,20 @@ describe("pricing", () => {
       inputPerMtok: 1,
       outputPerMtok: 5,
     });
+  });
+
+  it("prices codex:<model> (flat-rate subscription) at exactly zero", () => {
+    expect(hasExplicitRates("codex:gpt-5.6-sol")).toBe(true);
+    expect(ratesForModel("codex:gpt-5.6-sol")).toEqual({ inputPerMtok: 0, outputPerMtok: 0 });
+    expect(
+      costMicroUsd("codex:some-future-model", {
+        inputTokens: 5_000_000,
+        outputTokens: 5_000_000,
+        cacheReadTokens: 1_000_000,
+      })
+    ).toBe(0);
+    // The bare OpenAI id keeps its list price.
+    expect(ratesForModel("gpt-5.6-sol").inputPerMtok).toBe(5);
   });
 
   it("prices unknown models at the conservative fallback, never free", () => {
