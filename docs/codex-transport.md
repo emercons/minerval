@@ -50,12 +50,39 @@ Each call runs
 
 ```
 codex exec -m <model> -c model_reasoning_effort=<effort> -s read-only \
-  --skip-git-repo-check --json --output-schema <schema> -o <reply> -
+  --skip-git-repo-check --ignore-user-config --json \
+  --output-schema <schema> -o <reply> -
 ```
 
 with the prompt on stdin (never on the command line), in a fresh, empty
-temporary directory that is deleted afterwards. Codex still loads your
-`~/.codex/config.toml` and global instructions.
+temporary directory that is deleted afterwards.
+
+### Isolation
+
+- **No user config.** `--ignore-user-config` skips `$CODEX_HOME/config.toml`,
+  so the MCP servers, plugins and `notify` hooks configured there are not
+  loaded. The login in `$CODEX_HOME/auth.json` is still used. Settings from that
+  file (default model, effort, approval policy) do not apply; the adapter passes
+  model and effort itself. `-c mcp_servers={}` would not do the same job:
+  `-c` merges into the config, so `codex mcp list` still shows every user
+  server with it.
+- **Allowlisted environment.** The child does not inherit the server's
+  environment. It gets only `PATH`, `PATHEXT`, `SYSTEMROOT`, `SYSTEMDRIVE`,
+  `COMSPEC`, `WINDIR`, `HOME`, `USERPROFILE`, `HOMEDRIVE`, `HOMEPATH`,
+  `APPDATA`, `LOCALAPPDATA`, `TEMP`, `TMP`, `TMPDIR`, `USER`, `USERNAME`,
+  `LOGNAME`, `LANG`, `LANGUAGE`, `LC_*`, the proxy and CA variables
+  (`HTTP(S)_PROXY`, `ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `SSL_CERT_DIR`,
+  `NODE_EXTRA_CA_CERTS`) and Codex's own `CODEX_*` namespace. Any name
+  containing `API_KEY`, `TOKEN`, `SECRET`, `PASSWORD` or `DATABASE_URL` is
+  dropped even if it would otherwise be allowed (for example `CODEX_API_KEY`).
+  A prompt-injected source therefore cannot make Codex print provider keys or
+  database passwords, and an inherited `OPENAI_API_KEY` cannot switch Codex
+  from the subscription to metered API billing.
+- **Process tree.** On Windows a timeout kills the tree with `taskkill /T /F`.
+  On POSIX the child is started `detached` (its own session and process group)
+  so the timeout can kill the whole group. The flip side: a supervisor that
+  stops Minerval by killing *Minerval's* process group does not reach a running
+  codex. It exits by itself when its call finishes or times out.
 
 ## Limits and behaviour
 
@@ -65,7 +92,13 @@ temporary directory that is deleted afterwards. Codex still loads your
   schemas are made OpenAI-strict automatically: objects are closed, every
   property is required, and properties the caller left optional become
   nullable. A `null` for such a property is removed again before the result is
-  returned.
+  returned. That clean-up follows `items`, local `$ref`s (`#/$defs/…`,
+  `#/definitions/…`) and `anyOf`/`oneOf`/`allOf`. For an object value it uses
+  the first branch whose properties cover all of the value's keys.
+- **Free-form objects are not supported.** An object schema without
+  `properties` (a free-form map) cannot be expressed in strict mode. It is left
+  as it is, and Codex may reject the schema. Give such fields explicit
+  properties, or pass them as a JSON-encoded string.
 - **`maxTokens` and `temperature` are ignored**, because `codex exec` has no
   flags for them.
 - **Cost:** `codex:` models are priced at 0 in `src/llm/pricing.ts`, since the
