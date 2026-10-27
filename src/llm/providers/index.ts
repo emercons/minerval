@@ -3,9 +3,10 @@
  *
  * Read routing.ts first — it owns the ID-shape rules. This module is only the
  * (tiny) map from a resolved provider name to the object that implements it, so
- * adding a fourth backend is: one adapter file, one shape rule, one line here.
+ * adding another backend is: one adapter file, one shape rule, one line here.
  */
 import { anthropicAdapter } from "./anthropic.js";
+import { codexAdapter } from "./codex.js";
 import { openaiAdapter } from "./openai.js";
 import { openrouterAdapter } from "./openrouter.js";
 import { providerForModel } from "./routing.js";
@@ -15,6 +16,7 @@ const ADAPTERS: Record<ProviderName, ProviderAdapter> = {
   anthropic: anthropicAdapter,
   openai: openaiAdapter,
   openrouter: openrouterAdapter,
+  codex: codexAdapter,
 };
 
 /** The adapter serving `modelId`. Throws if the id matches no known shape. */
@@ -22,6 +24,6 @@ export function getAdapter(modelId: string): ProviderAdapter {
   return ADAPTERS[providerForModel(modelId)];
 }
 
-export { anthropicAdapter, openaiAdapter, openrouterAdapter };
+export { anthropicAdapter, codexAdapter, openaiAdapter, openrouterAdapter };
 export * from "./routing.js";
 export type * from "./types.js";

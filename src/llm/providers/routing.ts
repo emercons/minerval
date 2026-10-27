@@ -4,12 +4,15 @@
  *
  * Routing is by ID SHAPE, so adding a model never means editing a list:
  *
+ *   ^codex:         → codex       (the local Codex CLI on a ChatGPT
+ *                                  subscription, e.g. "codex:gpt-5.6-sol";
+ *                                  no API key — see providers/codex.ts)
  *   ^claude-        → anthropic   (Anthropic direct, e.g. "claude-sonnet-5")
  *   ^gpt- | ^o\d    → openai      (OpenAI direct, e.g. "gpt-5-nano", "o3")
  *   contains "/"    → openrouter  (their vendor/model convention,
  *                                  e.g. "qwen/qwen3-235b-a22b")
  *   anything else   → unresolvable, and both config validation and the call
- *                     path fail with a message naming these three shapes.
+ *                     path fail with a message naming these shapes.
  *
  * This module is deliberately DEPENDENCY-FREE (no adapters, no config) so that
  * src/config.ts can validate model-id fields at load time without dragging in
@@ -21,21 +24,31 @@ import type { ProviderName } from "./types.js";
 
 /** Human-facing description of the accepted ID shapes, used in every error. */
 export const ACCEPTED_MODEL_ID_SHAPES =
-  'an Anthropic ID ("claude-…"), an OpenAI ID ("gpt-…" or "o3"), or an ' +
-  'OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b")';
+  'an Anthropic ID ("claude-…"), an OpenAI ID ("gpt-…" or "o3"), an ' +
+  'OpenRouter "vendor/model" ID (e.g. "qwen/qwen3-235b-a22b"), or a local ' +
+  'Codex CLI ID ("codex:<model>", e.g. "codex:gpt-5.6-sol")';
 
 /** Bedrock/Vertex-prefixed Anthropic IDs — a recurring foot-gun (issue #11). */
 function isBedrockStyleId(id: string): boolean {
   return /^([a-z]{2,4}\.)?anthropic\./.test(id);
 }
 
+/** "codex:<model>" — the local Codex CLI transport (providers/codex.ts). */
+export const CODEX_MODEL_PREFIX = "codex:";
+
 /**
  * Resolve a model id to its provider, or null when the id matches none of the
- * three accepted shapes.
+ * accepted shapes.
  */
 export function resolveProvider(modelId: string): ProviderName | null {
   const id = modelId.trim();
   if (!id) return null;
+  // Codex first, and in particular before the "/" rule: the prefix is an
+  // explicit transport choice, and the model part after it is the Codex CLI's
+  // own name (a bare "codex:" with no model resolves to nothing).
+  if (id.startsWith(CODEX_MODEL_PREFIX)) {
+    return id.length > CODEX_MODEL_PREFIX.length ? "codex" : null;
+  }
   // Anthropic first: a Bedrock-style "us.anthropic.claude-…" id contains no
   // slash and does not start with "claude-", so it falls through to null.
   if (isAnthropicModelId(id)) return "anthropic";
@@ -46,7 +59,7 @@ export function resolveProvider(modelId: string): ProviderName | null {
   return null;
 }
 
-/** True when `id` routes to one of the three backends. */
+/** True when `id` routes to one of the backends. */
 export function isSupportedModelId(id: string): boolean {
   return resolveProvider(id) !== null;
 }

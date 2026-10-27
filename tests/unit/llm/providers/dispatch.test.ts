@@ -15,6 +15,7 @@ describe("getAdapter", () => {
     expect(getAdapter("gpt-5-nano").name).toBe("openai");
     expect(getAdapter("o3").name).toBe("openai");
     expect(getAdapter("qwen/qwen3-235b-a22b").name).toBe("openrouter");
+    expect(getAdapter("codex:gpt-5.6-sol").name).toBe("codex");
   });
 
   it("throws on an ID that matches no shape", () => {

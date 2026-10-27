@@ -34,6 +34,19 @@ describe("resolveProvider — the routing table", () => {
     expect(resolveProvider("anthropic/claude-sonnet-5")).toBe("openrouter");
   });
 
+  it("routes codex:<model> to the Codex CLI, ahead of the vendor/model rule", () => {
+    expect(resolveProvider("codex:gpt-5.6-sol")).toBe("codex");
+    expect(resolveProvider("codex:o3")).toBe("codex");
+    // The prefix is checked before "/" and before the gpt-/claude- shapes.
+    expect(resolveProvider("codex:openai/gpt-5")).toBe("codex");
+    expect(isSupportedModelId("codex:gpt-5.6-terra")).toBe(true);
+    // A bare prefix names no model.
+    expect(resolveProvider("codex:")).toBeNull();
+    // Without the prefix nothing changes.
+    expect(resolveProvider("gpt-5.6-sol")).toBe("openai");
+    expect(resolveProvider("codex-mini")).toBeNull();
+  });
+
   it("resolves nothing for Bedrock-style IDs (issue #11)", () => {
     expect(resolveProvider("us.anthropic.claude-sonnet-4-20250514")).toBeNull();
     expect(resolveProvider("anthropic.claude-3-haiku")).toBeNull();
@@ -61,6 +74,7 @@ describe("error messages", () => {
     expect(message).toContain("claude-");
     expect(message).toContain("gpt-");
     expect(message).toContain("vendor/model");
+    expect(message).toContain("codex:");
   });
 
   it("providerForModel throws on an unresolvable id", () => {

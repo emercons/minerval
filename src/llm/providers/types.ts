@@ -19,8 +19,8 @@ export type LlmTool = Anthropic.Messages.ToolUnion;
 /** An assistant-turn content block, in the seam's Anthropic dialect. */
 export type LlmContentBlock = Anthropic.ContentBlock;
 
-/** The three backends behind the seam. */
-export type ProviderName = "anthropic" | "openai" | "openrouter";
+/** The backends behind the seam. */
+export type ProviderName = "anthropic" | "openai" | "openrouter" | "codex";
 
 export interface TokenUsage {
   inputTokens: number;
