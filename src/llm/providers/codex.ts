@@ -134,9 +134,12 @@ export interface SpawnPlan {
 /** Find `name` on PATH (honouring PATHEXT on Windows). */
 function whichSync(name: string): string | null {
   const isWin = process.platform === "win32";
-  const exts = isWin
-    ? ["", ...(process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)]
-    : [""];
+  // On Windows a bare name only runs with a PATHEXT extension; npm also drops
+  // an extensionless POSIX sh script next to codex.cmd, which must NOT win.
+  const exts =
+    isWin && !extname(name)
+      ? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
+      : [""];
   const dirs = (process.env.PATH ?? process.env.Path ?? "").split(delimiter).filter(Boolean);
   for (const dir of dirs) {
     for (const ext of exts) {

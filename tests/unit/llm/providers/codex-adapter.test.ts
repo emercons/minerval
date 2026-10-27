@@ -128,6 +128,25 @@ describe("codexAdapter — the process contract", () => {
     expect(existsSync(schemaPath)).toBe(false);
   });
 
+  it.runIf(process.platform === "win32")(
+    "runs a non-npm .cmd CODEX_BIN through cmd.exe with quoted arguments",
+    async () => {
+      scenario({ replies: [JSON.stringify({ text: "via cmd" })] });
+      const wrapper = join(dir, "wrap.cmd");
+      writeFileSync(wrapper, `@"${process.execPath}" "${FAKE}" %*\r\n`);
+      process.env.CODEX_BIN = wrapper;
+      expect(planSpawn(wrapper, ["exec"]).windowsVerbatimArguments).toBe(true);
+      const r = await codexAdapter.complete({
+        model: MODEL,
+        maxTokens: 10,
+        messages: [{ role: "user", content: 'stdin with "quotes" & ampersands' }],
+      });
+      expect(r.content).toBe("via cmd");
+      expect(call().argv).toContain("model_reasoning_effort=medium");
+      expect(call().stdin).toContain('stdin with "quotes" & ampersands');
+    }
+  );
+
   it("defaults reasoning effort to medium", async () => {
     scenario({ replies: [JSON.stringify({ text: "x" })] });
     await codexAdapter.complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] });
