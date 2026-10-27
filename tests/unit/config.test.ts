@@ -193,3 +193,53 @@ describe("loadConfig API key contributor bindings (issue #10)", () => {
     expect(config.apiKeyContributors).toEqual({});
   });
 });
+
+describe("loadConfig — key-free Codex setup", () => {
+  const ENV = [
+    "MATCHER_MODEL",
+    "STEWARD_MODEL",
+    "CURATOR_MODEL",
+    "EXTRACTOR_MODEL",
+    "EXTRACTOR_FALLBACK_MODEL",
+    "GOVERNANCE_MODEL",
+    "AUDIT_MODEL",
+    "ARBITRATION_MODEL",
+    "EXTENSION_MODEL",
+    "GRANTMAKER_MODEL",
+    "JUDGE_MODEL",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ENVIRONMENT",
+  ];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of ENV) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    for (const k of ENV) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("loads with every *_MODEL on codex:… and no API keys, even in production", async () => {
+    for (const k of ENV.filter((k) => k.endsWith("_MODEL"))) {
+      process.env[k] = "codex:gpt-5.6-sol";
+    }
+    process.env.ENVIRONMENT = "production";
+    const { loadConfig } = await import("../../src/config.js");
+    const config = loadConfig();
+    expect(config.matcherModel).toBe("codex:gpt-5.6-sol");
+    expect(config.extractorModel).toBe("codex:gpt-5.6-sol");
+    expect(config.extractorFallbackModel).toBe("codex:gpt-5.6-sol");
+    expect(config.anthropicApiKey).toBe("");
+    expect(config.openaiApiKey).toBe("");
+  });
+});
