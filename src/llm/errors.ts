@@ -36,6 +36,29 @@ export class LlmBudgetExceededError extends Error {
 }
 
 /**
+ * The Codex CLI transport (src/llm/providers/codex.ts) hit the ChatGPT/Codex
+ * subscription's usage, rate or quota limit ("You've hit your usage limit …
+ * try again at 6:12 PM"). It IS an LlmBudgetExceededError, so every path that
+ * already stops on the internal budget breaker stops here too: the Steward
+ * requeues the claim without counting an attempt, drainLocalQueues puts the
+ * message back and rethrows, and the run fails loudly instead of parking every
+ * remaining claim as `error`. `codexMessage` carries Codex's own text,
+ * including when to try again.
+ */
+export class CodexUsageLimitError extends LlmBudgetExceededError {
+  constructor(
+    public readonly model: string,
+    public readonly codexMessage: string
+  ) {
+    super("codex_usage_limit", 0, 0);
+    this.name = "CodexUsageLimitError";
+    this.message =
+      `LLM budget exceeded: the Codex subscription limit was hit for ` +
+      `"${model}": ${codexMessage}`;
+  }
+}
+
+/**
  * Is this error a *transient* API/infrastructure failure — one that says nothing
  * about the request itself and should be retried later — rather than a genuine
  * logic error in how we called the model?

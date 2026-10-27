@@ -99,6 +99,13 @@ temporary directory that is deleted afterwards.
   `properties` (a free-form map) cannot be expressed in strict mode. It is left
   as it is, and Codex may reject the schema. Give such fields explicit
   properties, or pass them as a JSON-encoded string.
+- **Subscription limits stop the run.** When `codex exec` fails and its
+  stderr or `--json` error events mention a usage limit, rate limit, quota or
+  "too many requests", the adapter throws `CodexUsageLimitError`, a subclass of
+  `LlmBudgetExceededError` whose message carries Codex's own line (for example
+  "try again at 6:12 PM"). The Steward reports `budget`, `drainLocalQueues`
+  requeues the message and rethrows, and the drain stops instead of burning
+  through the queue. Other non-zero exits stay generic errors.
 - **`maxTokens` and `temperature` are ignored**, because `codex exec` has no
   flags for them.
 - **Cost:** `codex:` models are priced at 0 in `src/llm/pricing.ts`, since the

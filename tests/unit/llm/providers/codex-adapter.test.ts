@@ -23,6 +23,7 @@ import {
   CODEX_MAX_PROMPT_CHARS,
   codexAdapter,
   codexModelName,
+  findUsageLimitMessage,
   parseCodexEvents,
   parseNpmCmdShim,
   planSpawn,
@@ -31,6 +32,7 @@ import {
   toCodexStrictSchema,
 } from "../../../../src/llm/providers/codex.js";
 import { toolUseLoop } from "../../../../src/llm/client.js";
+import { CodexUsageLimitError, LlmBudgetExceededError } from "../../../../src/llm/errors.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FAKE = join(here, "fixtures", "fake-codex.mjs");
@@ -220,6 +222,45 @@ describe("codexAdapter — the process contract", () => {
     await expect(
       codexAdapter.complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] })
     ).rejects.toThrow(/exited with code 3.*not logged in/);
+  });
+
+  it("turns a subscription usage limit on stderr into a budget error (stops the drain)", async () => {
+    scenario({
+      exitCode: 1,
+      stderr:
+        "ERROR: You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), or try again at 6:12 PM.\n",
+    });
+    const err = await codexAdapter
+      .complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodexUsageLimitError);
+    expect(err).toBeInstanceOf(LlmBudgetExceededError);
+    expect((err as Error).message).toMatch(/budget/i);
+    expect((err as Error).message).toContain("try again at 6:12 PM");
+    expect(callCount()).toBe(1); // no retry against an exhausted subscription
+  });
+
+  it("recognises a usage limit reported as a JSON error event on stdout", async () => {
+    scenario({
+      exitCode: 1,
+      stdout:
+        JSON.stringify({ type: "thread.started", thread_id: "t1" }) +
+        "\n" +
+        JSON.stringify({ type: "error", message: "Rate limit reached for requests. Try again in 20s." }) +
+        "\n",
+    });
+    await expect(
+      codexAdapter.complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] })
+    ).rejects.toThrow(LlmBudgetExceededError);
+  });
+
+  it("keeps other failures generic (not a budget error)", async () => {
+    scenario({ exitCode: 2, stderr: "error: unexpected argument '--frobnicate'" });
+    const err = await codexAdapter
+      .complete({ model: MODEL, maxTokens: 10, messages: [{ role: "user", content: "x" }] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(LlmBudgetExceededError);
   });
 
   it("times out, kills the process, and cleans up", async () => {
@@ -511,6 +552,17 @@ describe("helpers", () => {
     const { usage, errors } = parseCodexEvents(out);
     expect(usage).toEqual({ inputTokens: 11, outputTokens: 4, cacheReadTokens: 4, cacheCreationTokens: 0 });
     expect(errors).toEqual(["rate limited"]);
+  });
+
+  it("findUsageLimitMessage matches limit/quota wording and ignores the rest", () => {
+    expect(findUsageLimitMessage(["noise\nYou've hit your usage limit. Try again at 6:12 PM."])).toBe(
+      "You've hit your usage limit. Try again at 6:12 PM."
+    );
+    expect(findUsageLimitMessage([JSON.stringify({ type: "error", error: { message: "insufficient_quota" } })])).toBe(
+      "insufficient_quota"
+    );
+    expect(findUsageLimitMessage(["429 Too Many Requests"])).toBe("429 Too Many Requests");
+    expect(findUsageLimitMessage(["not logged in", JSON.stringify({ type: "turn.completed" })])).toBeNull();
   });
 
   it("parseNpmCmdShim finds the JS entry behind an npm .cmd shim", () => {

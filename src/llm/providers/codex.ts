@@ -59,6 +59,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join } from "node:path";
 import type Anthropic from "@anthropic-ai/sdk";
 
+import { CodexUsageLimitError } from "../errors.js";
 import { isServerTool, toStrictJsonSchema, toolResultText } from "./openai-dialect.js";
 import { logCacheUsage, recordCallUsage, type ProviderUsage } from "./metering.js";
 import { CODEX_MODEL_PREFIX } from "./routing.js";
@@ -308,6 +309,10 @@ export function parseCodexEvents(stdout: string): {
       cached += num(usage.cached_input_tokens);
       output += num(usage.output_tokens);
     }
+    const item = ev.item as Record<string, unknown> | undefined;
+    if (item && item.type === "error" && typeof item.message === "string") {
+      errors.push(item.message);
+    }
     if (type === "error" || type === "turn.failed") {
       const msg =
         (typeof ev.message === "string" && ev.message) ||
@@ -330,6 +335,48 @@ export function parseCodexEvents(stdout: string): {
 
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+/**
+ * Wording Codex uses when the subscription is exhausted or throttled. Matched
+ * only on a FAILED run (non-zero exit), against its error events, stderr and
+ * stdout, so a model reply that merely talks about rate limits never trips it.
+ */
+const USAGE_LIMIT_PATTERNS = [
+  /usage limit/i,
+  /hit your (?:usage )?limit/i,
+  /rate[ _-]?limit/i,
+  /quota/i,
+  /too many requests/i,
+];
+
+/** The first line naming a usage/rate/quota limit, or null. */
+export function findUsageLimitMessage(texts: string[]): string | null {
+  for (const text of texts) {
+    for (const rawLine of text.split(/\r?\n/)) {
+      let line = rawLine.trim();
+      if (!line) continue;
+      // A JSON event line: prefer its message over the raw JSON.
+      if (line.startsWith("{")) {
+        try {
+          const ev = JSON.parse(line) as Record<string, unknown>;
+          const nested = (ev.error ?? ev.item) as { message?: unknown } | undefined;
+          const msg =
+            typeof ev.message === "string"
+              ? ev.message
+              : typeof nested?.message === "string"
+                ? nested.message
+                : "";
+          if (!msg) continue;
+          line = msg;
+        } catch {
+          // not JSON after all: match the raw line
+        }
+      }
+      if (USAGE_LIMIT_PATTERNS.some((re) => re.test(line))) return line.slice(0, 500);
+    }
+  }
+  return null;
 }
 
 /**
@@ -440,6 +487,8 @@ async function runCodex(
       );
     }
     if (code !== 0) {
+      const limit = findUsageLimitMessage([...events.errors, stderrTail, stdout]);
+      if (limit) throw new CodexUsageLimitError(modelId, limit);
       const detail = [...events.errors, stderrTail.trim()].filter(Boolean).join(" | ");
       throw new Error(
         `Codex CLI exited with code ${code} for "${modelId}"` +

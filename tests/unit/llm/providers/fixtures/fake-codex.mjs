@@ -2,7 +2,7 @@
 // A stand-in for `codex exec`, used via CODEX_BIN in codex-adapter.test.ts.
 // Driven by $CODEX_FAKE_DIR/scenario.json:
 //   { replies: string[], delayMs?: number, exitCode?: number,
-//     stderr?: string, noUsage?: boolean }
+//     stderr?: string, stdout?: string (with exitCode), noUsage?: boolean }
 // Call N (0-based) writes replies[min(N, last)] verbatim to the -o file and
 // logs { argv, stdin, cwd, cwdEntries, env } to $CODEX_FAKE_DIR/call-N.json.
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
@@ -26,8 +26,14 @@ process.stdin.on("end", () => {
     JSON.stringify({ argv, stdin, cwd: process.cwd(), cwdEntries: readdirSync(process.cwd()), env: process.env })
   );
   setTimeout(() => {
+    if (scenario.exitCode) {
+      // Flush both streams before exiting so the adapter sees the failure text.
+      process.stdout.write(scenario.stdout ?? "", () =>
+        process.stderr.write(scenario.stderr ?? "", () => process.exit(scenario.exitCode))
+      );
+      return;
+    }
     if (scenario.stderr) process.stderr.write(scenario.stderr);
-    if (scenario.exitCode) process.exit(scenario.exitCode);
     const replies = scenario.replies ?? [];
     const reply = replies[Math.min(n, replies.length - 1)];
     if (reply !== undefined) writeFileSync(outPath, reply);
